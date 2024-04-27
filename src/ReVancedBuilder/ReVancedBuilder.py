@@ -9,6 +9,7 @@ import configparser as cp
 import json
 import logging
 import subprocess
+import shutil
 
 import requests as req
 from packaging.version import Version
@@ -22,7 +23,7 @@ from ReVancedBuilder.Cleanup import move_apps, err_exit
 # Update the ReVanced tools, if needed
 def update_tools(appstate):
     for item in ['revanced-cli', 'revanced-integrations', 'revanced-patches']:
-        print(f"Checking updates for {item}...")
+        log.info(f"Checking updates for {item}...")
         tools = appstate['tools']
         tool = next(filter(lambda x: x['repository'] == 'revanced/'+item and x['content_type'] not in ['application/pgp-keys', 'application/json'], tools))
         latest_ver = Version(tool['version'])
@@ -35,22 +36,29 @@ def update_tools(appstate):
         output_file = item+os.path.splitext(tool['name'])[1]
         if  flag == 'force' or not os.path.isfile(output_file) or present_ver < latest_ver:
             appstate['up-to-date'] = False
-            print(f"{item} has an update ({str(present_ver)} -> {str(latest_ver)})")
+            log.info(f"{item} has an update ({str(present_ver)} -> {str(latest_ver)})")
             if flag != 'checkonly':
-                print(f"Downloading {output_file}...")
+                log.info(f"Downloading {output_file}...")
                 res = req.get(tool['browser_download_url'], stream=True)
                 res.raise_for_status()
+                total_length = res.headers.get('content-length')
+                total_length = int(total_length) if total_length is not None else None
+
                 with open(output_file, 'wb') as f:
+                    chunks_written = 0
                     for chunk in res.iter_content(chunk_size=8192):
+                        chunks_written += len(chunk)
+                        print(f'{chunks_written/1024/1024:.2f}M / {f'{total_length/1024/1024:.2f}M' if total_length is not None else '?'}', end='\r')
                         f.write(chunk)
+                    print()
                 appstate['present_vers'].update({item: str(latest_ver)})
-                print("Done!")
+                log.info("Done!")
 
     return appstate
 
 # Update GmsCore, if needed
 def update_gmscore(appstate):
-    print('Checking updates for GmsCore...')
+    log.info('Checking updates for GmsCore...')
     # Pull the latest information using the ReVanced API
     try:
         data = req.get('https://api.revanced.app/v2/gmscore/releases/latest').json()['release']
@@ -76,17 +84,28 @@ def update_gmscore(appstate):
 
     if flag == 'force' or not os.path.isfile('GmsCore.apk') or present_ver < latest_ver:
             appstate['up-to-date'] = False
-            print(f"GmsCore has an update ({str(present_ver)} -> {str(latest_ver)})")
+            log.info(f"GmsCore has an update ({str(present_ver)} -> {str(latest_ver)})")
             if flag != 'checkonly':
-                print(f"Downloading GmsCore...")
+                log.info(f"Downloading GmsCore...")
                 res = req.get(gmscore_link, stream=True)
                 res.raise_for_status()
+                total_length = res.headers.get('content-length')
+                total_length = int(total_length) if total_length is not None else None
+
                 with open('GmsCore.apk', 'wb') as f:
+                    chunks_written = 0
                     for chunk in res.iter_content(chunk_size=8192):
+                        chunks_written += len(chunk)
+                        print(f'{chunks_written/1024/1024:.2f}M / {f'{total_length/1024/1024:.2f}M' if total_length is not None else '?'}', end='\r')
                         f.write(chunk)
+                    print()
                 appstate['present_vers'].update({'GmsCore': str(latest_ver)})
-                print("Done!")
+                log.info("Done!")
                 appstate['gmscore_updated'] = True
+
+                gmscore_archive_location = f'archive/GmsCore_{appstate['timestamp']}.apk'
+                shutil.copyfile('GmsCore.apk', gmscore_archive_location)
+                appstate['final_built_apk_locations']['GmsCore'] = gmscore_archive_location
 
     return appstate
 
@@ -99,7 +118,7 @@ appstate = {}
 
 # Get a timestamp
 time = datetime.now()
-appstate['timestamp'] = time.strftime('%Y-%m-%dT%H:%M:%SZ')
+appstate['timestamp'] = time.strftime('%Y-%m-%d-%H-%M')
 
 # Read arguments
 try:
@@ -127,10 +146,9 @@ except FileExistsError:
     pass
 
 logging.basicConfig(level=logging.INFO, format='%(message)s')
-logger = logging.getLogger()
-logger.addHandler(logging.FileHandler(f"logs/{appstate['timestamp']}.log", 'w'))
-print = logger.info
-appstate['logger'] = logger
+log = logging.getLogger()
+log.addHandler(logging.FileHandler(f"logs/{appstate['timestamp']}.log", 'w'))
+appstate['logger'] = log
 
 # Get the flag
 try:
@@ -144,8 +162,8 @@ if flag not in ['buildonly', 'checkonly', 'force', 'experimental', None]:
 appstate['flag'] = flag
 appstate['gmscore_updated'] = False
 
-print(f"Started building ReVanced apps at {time.strftime('%d %B, %Y %H:%M:%S')}")
-print('----------------------------------------------------------------------')
+log.info(f"Started building ReVanced apps at {time.strftime('%d %B, %Y %H:%M:%S')}")
+log.info('----------------------------------------------------------------------')
 
 # Read configs
 try:
@@ -171,6 +189,9 @@ except:
     # We'll treat empty as 0 later
     appstate['present_vers'] = json.loads('{}')
 
+# We store here the apk locations that was moved to the ./archive folder to send them later in notifications
+appstate['final_built_apk_locations'] = dict()
+
 appstate['up-to-date'] = True
 # send_notif(appstate, error=False) # <,,,,,,,,<,,,,,,,,,,,,,
 if flag != 'buildonly':
@@ -185,7 +206,7 @@ if (flag != 'checkonly' and not appstate['up-to-date']) or flag in ['force', 'bu
 
 # Update version numbers in the versions.json file
 if appstate['up-to-date'] and flag != 'buildonly':
-    print('There\'s nothing to do.')
+    log.info('There\'s nothing to do.')
 elif flag != 'checkonly':
     send_notif(appstate)
     try:
@@ -198,12 +219,18 @@ elif flag != 'checkonly':
             json.dump(appstate['present_vers'], f, indent=4)
         try:
             cmd = f"{appstate['build_config']['post_script']['file']} {appstate['timestamp']}"
-            print(f"Running the post command '{cmd}'")
+            log.info(f"Running the post command '{cmd}'")
             subprocess.run(cmd, shell=True)
         except:
             pass
 
 # Delete the lockfile
 os.remove('lockfile')
+
+#import pdb
+#pdb.set_trace()
+
+with open('appstate.json', 'w') as file:
+    json.dump(appstate, file, indent=2, default=lambda o: '<non-serializable>')
 
 sys.exit(0)

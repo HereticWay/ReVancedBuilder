@@ -76,9 +76,16 @@ def apkpure_dl(apk, appname, version, hard_version, session, present_vers, flag)
     res = session.get(
         f"https://d.apkpure.com/b/APK/{apk}?versionCode={ver_code}", stream=True)
     res.raise_for_status()
+    total_length = res.headers.get('content-length')
+    total_length = int(total_length) if total_length is not None else None
+
     with open(apk+'.apk', 'wb') as f:
+        chunks_written = 0
         for chunk in res.iter_content(chunk_size=8192):
+            chunks_written += len(chunk)
+            print(f'{chunks_written/1024/1024:.2f}M / {f'{total_length/1024/1024:.2f}M' if total_length is not None else '?'}', end='\r')
             f.write(chunk)
+        print()
     print("    Done!")
 
 

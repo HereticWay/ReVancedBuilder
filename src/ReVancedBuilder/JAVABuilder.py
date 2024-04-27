@@ -16,7 +16,7 @@ from ReVancedBuilder.Cleanup import err_exit
 def build_apps(appstate):
     build_config = appstate['build_config']
     flag = appstate['flag']
-    print = appstate['logger'].info
+    log = appstate['logger']
 
     chosen_patches = cp.ConfigParser()
     chosen_patches.read('chosen_patches')
@@ -71,16 +71,16 @@ def build_apps(appstate):
         cmd += f" -o {output_name}.apk {apk}.apk"
 
         if root:
-            print(f"Building {pretty_name} (root) using '{cmd}'")
+            log.info(f"Building {pretty_name} (root) using '{cmd}'")
         else:
-            print(f"Building {pretty_name} (nonroot) using '{cmd}'")
+            log.info(f"Building {pretty_name} (nonroot) using '{cmd}'")
 
         try:
             with subprocess.Popen(cmd, shell=True, bufsize=0, stdout=subprocess.PIPE, stderr=subprocess.STDOUT).stdout as output:
                 for line in output:
                     line_utf = line.decode('utf-8').strip('\n')
                     if line_utf:
-                        print(line_utf)
+                        log.info(line_utf)
         except Exception as e:
             err_exit(
                 f"There was an error while building {pretty_name}!\n{e}", appstate)

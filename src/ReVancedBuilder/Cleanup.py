@@ -14,7 +14,7 @@ from ReVancedBuilder.Notifications import send_notif
 
 def move_apps(appstate):
     build_config = appstate['build_config']
-    print = appstate['logger'].info
+    log = appstate['logger']
 
     try:
         os.mkdir('archive')
@@ -26,9 +26,13 @@ def move_apps(appstate):
             continue
         name = build_config[app]['output_name']
         final_name = f"{name}_{appstate['timestamp']}.apk"
+        build_config[app]['final_name'] = final_name
+        
+        final_apk_location = f'archive/{final_name}'
+        appstate['final_built_apk_locations'][app] = final_apk_location
 
         try:
-            os.rename(name+'.apk', 'archive/'+final_name)
+            os.rename(name+'.apk', final_apk_location)
         except FileNotFoundError:
             pass
             # sys.exit('There was an error moving the final apk files!')
@@ -43,7 +47,7 @@ def move_apps(appstate):
             files.reverse()
             for f in files[3:]:
                 os.remove(f)
-                print('Deleted old build '+f.name)
+                log.info('Deleted old build '+f.name)
 
         # Delete logs older than 7 days
         with os.scandir('logs') as dir:
@@ -51,10 +55,23 @@ def move_apps(appstate):
             for f in dir:
                 if f.stat().st_ctime < now - 7 * 86400:
                     os.remove(f)
+            # Do some cleanup, keep only the last 3 build's worth of files and a week worth of logs
+
+    # Clean up GmsCore archive
+    with os.scandir('archive') as dir:
+        files = []
+        for f in dir:
+            if 'GmsCore' in f.name:
+                files.append(f)
+        files.sort(key=lambda f: f.stat().st_ctime)
+        files.reverse()
+        for f in files[3:]:
+            os.remove(f)
+            log.info('Deleted old build '+f.name)
 
 
 def err_exit(msg, appstate, code=1):
-    print = appstate['logger'].info
+    log.info = appstate['logger'].info
 
     try:
         appstate['notification_config']
@@ -64,7 +81,7 @@ def err_exit(msg, appstate, code=1):
         pass
 
     if msg:
-        print(f"ERROR: {msg}")
+        log.info(f"ERROR: {msg}")
 
     # Delete the lockfile
     os.remove('lockfile')
