@@ -103,6 +103,10 @@ def update_gmscore(appstate):
                 log.info("Done!")
                 appstate['gmscore_updated'] = True
 
+                try:
+                    os.mkdir('./archive')
+                except FileExistsError:
+                    pass
                 gmscore_archive_location = f'archive/GmsCore_{appstate['timestamp']}.apk'
                 shutil.copyfile('GmsCore.apk', gmscore_archive_location)
                 appstate['final_built_apk_locations']['GmsCore'] = gmscore_archive_location
