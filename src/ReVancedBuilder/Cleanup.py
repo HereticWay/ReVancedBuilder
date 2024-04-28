@@ -71,7 +71,7 @@ def move_apps(appstate):
 
 
 def err_exit(msg, appstate, code=1):
-    log.info = appstate['logger'].info
+    log = appstate['logger']
 
     try:
         appstate['notification_config']
