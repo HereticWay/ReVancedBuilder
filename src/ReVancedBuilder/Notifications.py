@@ -110,3 +110,12 @@ def send_notif(appstate, error=False):
 
         else:
             log.info('Don\'t know how to send notifications to ' + entry)
+
+    # Telegram send emojis as "seperator"
+    cmd = f'./telegram.sh -t {token} -c {chat} \'🚧🚦🚧\''
+    with subprocess.Popen(cmd, shell=True, bufsize=0, stdout=subprocess.PIPE, stderr=subprocess.STDOUT).stdout as output:
+        for line in output:
+            line_utf = line.decode('utf-8').strip('\n')
+            if line_utf:
+                log.info(line_utf)
+
